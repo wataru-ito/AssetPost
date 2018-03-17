@@ -1,53 +1,35 @@
 # AssetPost
-ウィンドウにアセットをドロップすると、適切なフォルダに配置してくれるツールです。
+ウィンドウにアセットをドロップすると、適切なフォルダに配置してくれるツールです。<br>
 アセットパスを求めるのにファイル名を使用します。
 
 アセットの命名規約を作り、取り込みをスムーズにしましょう！
 
 
 # こんな時に便利
-大量に存在するファイルを、命名規約に従って指定のフォルダにいけないとき。
-ファイル名やフォルダ名に誤字があってうまく認識されてなかった…などなど。
+大量に存在するファイルを、命名規約に従って指定のフォルダにいけないとき。<br>
+ファイル名やフォルダ名に誤字があってうまく認識されてなかった…などなど。<br>
 こうしたヒューマンエラーを予防します。
 
 
 # 起動方法
 
-Tools > AssetPost
+> Tools > AssetPost
 
-このウィンドウがアセットポスト。
-ここにポイポイするとプロジェクトの適切な場所に入れてくれる。
+このウィンドウがアセットポスト。<br>
+ここにポイポイするとプロジェクトの適切な場所に入れてくれる。<br>
 ![AssetPostイメージ](./Readme_files/assetpost_image.jpg "image")
 
 
-# そのためにはPostmanを定義する
+# 自動配置情報を設定
 
-AssetPost.AssetPostmanを継承したクラスを作っておくだけでOK。
-
-### サンプル
-例えば大量に存在するアイテム画像。
-命名規約に従って適切なフォルダに配置する。
-`ファイル命名規約 : item_XXX_YY0000.png`
-`パス : Assets/Item/XXX/YY/ `
-
-```C#
-public class ItemTexturePostman : AssetPost.AssetRegexPostman
-{
-	// 対象ファイルの正規表現
-	const string kPattern = @"^item_[a-zA-Z]{3}_[a-zA-Z]{2}\d{4}\.(png|PNG|jpg|JPG)$";
-	
-	public TexturePostman() : base(kPattern)
-	{}
-
-	protected override string FileName2AssetPath(string fileName)
-	{
-		// item_xxx_xx0000.png
-		var elements = fileName.Split(new char[] { '_', '.' });
-		return string.Format("Assets/Items/{0}/{1}/{2}",
-			elements[1],
-			elements[2].Remove(2),
-			fileName);
-	}
-}
-```
-
+* 右上の「配達先一覧」から設定を行います
+* 最初は何もないので「新規登録」を選択
+* 配達先登録画面
+	* 登録名：一覧に表示する際の名前
+	* ファイルの命名規約：ドロップされたファイルを識別するための正規表現
+	* お届け先：そのファイルのAssetPathを設定します
+		* Assets/の後ろにstring.Format()形式でまずは作成
+		* formatに渡す引数は、ファイル名をsplitして指定します
+		* separator：Splitに使うchar群を指定
+		* index：Splitされた文字列のインデックス
+		* 開始と終了をそれぞれsubstringで。終了はマイナス指定すると最後から指定文字削れる。

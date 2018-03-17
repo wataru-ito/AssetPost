@@ -1,0 +1,1 @@
+{"adresses":[{"name":"img_XX_YY00","fileNamePattern":"img_[a-zA-Z]{2}_[a-zA-Z]{2}[0-9]{2}.(png|PNG)","separators":[95,46],"assetPathFormat":"Image/{0}/{1}","argumentList":[{"elementIndex":1,"startIndex":0,"endIndex":0},{"elementIndex":2,"startIndex":0,"endIndex":2}]}]}
