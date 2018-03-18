@@ -294,7 +294,7 @@ namespace AssetPost
 		bool CanRegisterAddress()
 		{
 			return m_edittingAddress != null && 
-				string.IsNullOrEmpty(m_edittingAddress.name) &&
+				!string.IsNullOrEmpty(m_edittingAddress.name) &&
 				!string.IsNullOrEmpty(m_edittingAddress.fileNamePattern) &&
 				m_patternEnabled &&
 				!string.IsNullOrEmpty(m_edittingAddress.assetPathFormat) &&
