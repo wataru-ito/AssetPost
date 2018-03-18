@@ -119,10 +119,12 @@ namespace AssetPost
 			}
 
 			var str = elements[index];
-			if (info.startIndex > 0)
-				str = str.Substring(info.startIndex);
-			if (info.endIndex > 0)
-				str = str.Remove(info.endIndex - info.startIndex);
+			if (info.startIndex != 0 || info.endIndex != 0)
+			{
+				var startIndex = info.startIndex >= 0 ? info.startIndex : str.Length + info.startIndex;
+				var endIndex = info.endIndex > 0 ? info.endIndex : str.Length + info.endIndex;
+				str = str.Substring(startIndex, endIndex - startIndex);
+			}
 			return str;
 		}
 	}
