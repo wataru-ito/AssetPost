@@ -11,7 +11,7 @@ namespace AssetPost
 	{
 		const string kPath = "ProjectSettings/AssetPostAddressbook.txt";
 
-		public List<AssetPostAddress> adresses = new List<AssetPostAddress>();
+		public List<AssetPostAddress> addressList = new List<AssetPostAddress>();
 
 
 		//------------------------------------------------------

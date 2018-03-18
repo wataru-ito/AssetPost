@@ -2,29 +2,29 @@
 
 namespace AssetPost
 {
-	/// <summary>
-	/// AssetPostWindow起動時にクラスのインスタンスが作られる。
-	/// 継承したクラスはデフォルトコンストラクタを実装する事
-	/// </summary>
 	class AssetPostman
 	{
-		AssetPostAddress m_adress;
+		AssetPostAddress m_address;
 		readonly Regex m_fileNameRegex;
 
-		public AssetPostman(AssetPostAddress adress)
+		//------------------------------------------------------
+		// lifetime
+		//------------------------------------------------------
+
+		public AssetPostman(AssetPostAddress address)
 		{
-			m_adress = adress;
-			m_fileNameRegex = new Regex(adress.fileNamePattern);
+			m_address = address;
+			m_fileNameRegex = new Regex(address.fileNamePattern);
 		}
 
-		/// <summary>
-		/// ファイル名からアセットパスに変換する
-		/// null or empty で無視
-		/// </summary>
+		//------------------------------------------------------
+		// accessor
+		//------------------------------------------------------
+
 		public string Delivery(string fileName)
 		{
 			return m_fileNameRegex.IsMatch(fileName) ?
-				m_adress.GetAssetPath(fileName) : null;
+				m_address.GetAssetPath(fileName) : null;
 		}
 	}
 }

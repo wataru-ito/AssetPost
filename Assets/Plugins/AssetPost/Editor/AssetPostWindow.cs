@@ -21,14 +21,16 @@ namespace AssetPost
 			RegisterAddress,
 		}
 
-		AssetPostAddressBook m_adressbook;
+		AssetPostAddressBook m_addressbook;
 		AssetPostman[] m_postmans;
 		List<string> m_assetPathList = new List<string>();
 		List<string> m_unknownFileList = new List<string>();
 
 		Mode m_mode;
 
-		AssetPostAddress m_adress;
+		AssetPostAddress m_edittingAddress;
+		bool m_patternEnabled;
+		int m_needArgmentCount;
 		string m_sampleString = string.Empty;
 
 		GUIStyle m_messageStyle;
@@ -58,7 +60,7 @@ namespace AssetPost
 			titleContent = new GUIContent("Asset Post");
 			minSize = new Vector2(330f, 100f);
 
-			m_adressbook = AssetPostAddressBook.Load();
+			m_addressbook = AssetPostAddressBook.Load();
 			UpdatePostman();
 
 			InitGUI();
@@ -72,11 +74,11 @@ namespace AssetPost
 					DeliveryMode();
 					break;
 				case Mode.Addressbook:
-					DrawAdressbook();
+					DrawAddressbook();
 					break;
 
 				case Mode.RegisterAddress:
-					RegisterAdresseeMode();
+					RegisterAddresseeMode();
 					break;		
 			}
 		}
@@ -117,7 +119,7 @@ namespace AssetPost
 
 		void UpdatePostman()
 		{
-			m_postmans = m_adressbook.adresses.Select(i => new AssetPostman(i)).ToArray();
+			m_postmans = m_addressbook.addressList.Select(i => new AssetPostman(i)).ToArray();
 		}
 
 		void DeliveryMode()
@@ -223,18 +225,18 @@ namespace AssetPost
 
 
 		//------------------------------------------------------
-		// adresseebook
+		// addresseebook
 		//------------------------------------------------------
 
-		void DrawAdressbook()
+		void DrawAddressbook()
 		{
 			DrawToolbar("配達先一覧", "戻る", Mode.Delivery);
 
-			for (int i = 0; i < m_adressbook.adresses.Count; ++i)
+			for (int i = 0; i < m_addressbook.addressList.Count; ++i)
 			{
-				if (DrawAdress(m_adressbook.adresses[i]))
+				if (AddressField(m_addressbook.addressList[i]))
 				{
-					m_adressbook.adresses.RemoveAt(i--);
+					m_addressbook.addressList.RemoveAt(i--);
 				}
 			}
 
@@ -242,47 +244,37 @@ namespace AssetPost
 			GUILayout.FlexibleSpace();
 			if (GUILayout.Button("新規登録", m_registerStyle))
 			{
-				m_adress = new AssetPostAddress();
-				m_mode = Mode.RegisterAddress;
+				SetEditAddress(null);
 			}
 			GUILayout.FlexibleSpace();
 			EditorGUILayout.EndHorizontal();
 		}
 
-		bool DrawAdress(AssetPostAddress adress)
+		bool AddressField(AssetPostAddress address)
 		{
 			bool deleteFlag = false;
 			EditorGUILayout.BeginHorizontal();
 
 			if (GUILayout.Button("編集", GUILayout.Width(32)))
 			{
-				m_adress = adress;
-				m_mode = Mode.RegisterAddress;
+				SetEditAddress(address);
 			}
 
-			EditorGUILayout.LabelField(adress.name);
+			EditorGUILayout.LabelField(address.name);
 
 			if (GUILayout.Button(GUIContent.none, m_deleteBtnStyle, GUILayout.Width(16)))
 			{
-				deleteFlag = true;
+				if (EditorUtility.DisplayDialog("配達先削除", string.Format("配達先[{0}]を本当に削除しますか？", address.name), "削除"))
+				{
+					deleteFlag = true;
+				}
 			}
 
 			EditorGUILayout.EndHorizontal();
 			return deleteFlag;
 		}
 
-		void RegisterAddress(AssetPostAddress address)
-		{
-			if (!m_adressbook.adresses.Contains(m_adress))
-			{
-				m_adressbook.adresses.Add(m_adress);
-				m_adressbook.adresses.Sort((x, y) => x.name.CompareTo(y.name));
-			}
-			m_adressbook.Save();
-			UpdatePostman();
-		}
-
-
+	
 		//------------------------------------------------------
 		// 配達先登録
 		//------------------------------------------------------
@@ -291,82 +283,123 @@ namespace AssetPost
 		readonly GUIContent kAssetPathContent = new GUIContent("Assets/", "string.Format()形式で指定");
 		readonly GUIContent kIndexContent = new GUIContent("Index", "マイナスを指定すると最後から");
 
-		void RegisterAdresseeMode()
+		void SetEditAddress(AssetPostAddress address)
+		{
+			m_edittingAddress = address ?? new AssetPostAddress();
+			m_patternEnabled = false;
+			m_needArgmentCount = GetFormatArgumentCount(m_edittingAddress.assetPathFormat);
+			m_mode = Mode.RegisterAddress;
+		}
+
+		bool CanRegisterAddress()
+		{
+			return m_edittingAddress != null && 
+				string.IsNullOrEmpty(m_edittingAddress.name) &&
+				!string.IsNullOrEmpty(m_edittingAddress.fileNamePattern) &&
+				m_patternEnabled &&
+				!string.IsNullOrEmpty(m_edittingAddress.assetPathFormat) &&
+				m_edittingAddress.argumentList.Count >= m_needArgmentCount;
+		}
+
+		void RegisterAddress()
+		{
+			if (!m_addressbook.addressList.Contains(m_edittingAddress))
+			{
+				m_addressbook.addressList.Add(m_edittingAddress);
+				m_addressbook.addressList.Sort((x, y) => x.name.CompareTo(y.name));
+			}
+			m_addressbook.Save();
+			UpdatePostman();
+
+			m_edittingAddress = null;
+			m_mode = Mode.Addressbook;
+		}
+
+		void RegisterAddresseeMode()
 		{
 			DrawToolbar("配達先登録", "戻る", Mode.Addressbook);
 
-			if (m_adress == null)
+			if (m_edittingAddress == null)
 				return;
 
-			bool addable = true;
+			var labelWidth = EditorGUIUtility.labelWidth;
+			EditorGUIUtility.labelWidth = 100;
 
-			m_adress.name = EditorGUILayout.TextField("登録名", m_adress.name ?? string.Empty);
-			m_adress.fileNamePattern = EditorGUILayout.TextField(kPatternContent, m_adress.fileNamePattern);
+			EditAddress(m_edittingAddress);
+
+			EditorGUILayout.Space();
+
+			DrawPatternCheck();
+
+			EditorGUILayout.Space();
+
+			EditorGUILayout.BeginHorizontal();
+			{
+				GUILayout.FlexibleSpace();
+
+				GUI.enabled = CanRegisterAddress();
+				if (GUILayout.Button("登録", m_registerStyle))
+				{
+					RegisterAddress();
+				}
+				GUI.enabled = true;
+
+				GUILayout.FlexibleSpace();
+			}
+			EditorGUILayout.EndHorizontal();
+
+			EditorGUIUtility.labelWidth = labelWidth;
+		}
+
+		void EditAddress(AssetPostAddress address)
+		{
+			address.name = EditorGUILayout.TextField("登録名", address.name ?? string.Empty);
+			address.fileNamePattern = EditorGUILayout.TextField(kPatternContent, address.fileNamePattern);
 
 			EditorGUILayout.Space();
 
 			EditorGUILayout.LabelField("お届け先", m_labelStyle);
+			EditorGUI.BeginChangeCheck();
 			var labelWidth = EditorGUIUtility.labelWidth;
 			EditorGUIUtility.labelWidth = 45;
-			m_adress.assetPathFormat = EditorGUILayout.TextField(kAssetPathContent, m_adress.assetPathFormat);
+			address.assetPathFormat = EditorGUILayout.TextField(kAssetPathContent, address.assetPathFormat);
 			EditorGUIUtility.labelWidth = labelWidth;
-
-			int needArgmentCount = GetFormatArgumentCount(m_adress.assetPathFormat);
-
+			if (EditorGUI.EndChangeCheck())
+			{
+				m_needArgmentCount = GetFormatArgumentCount(address.assetPathFormat);
+			}
+						
 			++EditorGUI.indentLevel;
 			EditorGUILayout.LabelField("format引数設定 - ファイル名をSplitして使う");
 
-			m_adress.separators = DrawSeparators(m_adress.separators, m_adress.fileNamePattern);
+			address.separators = SeparatorsField(address.separators, address.fileNamePattern);
 
-			for (int i = 0; i < m_adress.argumentList.Count; ++i)
+			for (int i = 0; i < address.argumentList.Count; ++i)
 			{
-				if (DrawElementInfo(i, m_adress.argumentList[i]))
+				if (ArgumentInfoField(i, address.argumentList[i]))
 				{
-					m_adress.argumentList.RemoveAt(i--);
+					address.argumentList.RemoveAt(i--);
 				}
 			}
 
 			EditorGUILayout.BeginHorizontal();
 			GUILayout.FlexibleSpace();
-			if (GUILayout.Button("Args追加", m_plusStyle))
+			if (GUILayout.Button("引数追加", m_plusStyle))
 			{
 				var info = new AssetPostAddress.ArgumentInfo();
-				m_adress.argumentList.Add(info);
+				address.argumentList.Add(info);
 			}
 			EditorGUILayout.EndHorizontal();
 
-			if (m_adress.argumentList.Count < needArgmentCount)
+			if (address.argumentList.Count < m_needArgmentCount)
 			{
 				EditorGUILayout.HelpBox("引数の数がたりません", MessageType.Warning);
-				addable = false;
 			}
 
 			--EditorGUI.indentLevel;
-
-
-			EditorGUILayout.Space();
-
-			addable &= DrawSample(needArgmentCount);
-
-			EditorGUILayout.Space();
-
-			EditorGUILayout.BeginHorizontal();
-			GUILayout.FlexibleSpace();
-
-			GUI.enabled = addable && !string.IsNullOrEmpty(m_adress.name);
-			if (GUILayout.Button("登録",m_registerStyle))
-			{
-				RegisterAddress(m_adress);
-				m_adress = new AssetPostAddress();
-				m_mode = Mode.Addressbook;
-			}
-			GUI.enabled = true;
-
-			GUILayout.FlexibleSpace();
-			EditorGUILayout.EndHorizontal();
 		}
 
-		static char[] DrawSeparators(char[] separators, string sample)
+		static char[] SeparatorsField(char[] separators, string sample)
 		{
 			var str = EditorGUILayout.TextField("separator", new string(separators));
 			separators = new char[str.Length];
@@ -390,7 +423,7 @@ namespace AssetPost
 			return separators;
 		}
 
-		bool DrawElementInfo(int index, AssetPostAddress.ArgumentInfo info)
+		bool ArgumentInfoField(int index, AssetPostAddress.ArgumentInfo info)
 		{
 			bool deleteFlag = false;
 
@@ -400,11 +433,11 @@ namespace AssetPost
 			EditorGUI.indentLevel = 0;
 			EditorGUILayout.BeginHorizontal();
 			GUILayout.FlexibleSpace();
-			EditorGUILayout.LabelField("{"+index+"}", GUILayout.Width(20));
+			EditorGUILayout.LabelField("{"+index+"}", GUILayout.Width(24));
 
 			var labelWidth = EditorGUIUtility.labelWidth;
-			EditorGUIUtility.labelWidth = 35;
-			info.elementIndex = EditorGUILayout.IntField(kIndexContent, info.elementIndex, GUILayout.Width(60));
+			EditorGUIUtility.labelWidth = 40;
+			info.elementIndex = EditorGUILayout.IntField(kIndexContent, info.elementIndex, GUILayout.Width(65));
 			EditorGUIUtility.labelWidth = labelWidth;
 
 			GUILayout.Space(8);
@@ -442,33 +475,33 @@ namespace AssetPost
 			return count;
 		}
 
-		bool DrawSample(int needArgmentCount)
+		void DrawPatternCheck()
 		{
-			bool success = true;
+			m_patternEnabled = false;
 
 			EditorGUILayout.LabelField("テスト", m_labelStyle);
 			m_sampleString = EditorGUILayout.TextField("ファイル名", m_sampleString);
-			if (m_adress.argumentList.Count >= needArgmentCount)
+			EditorGUILayout.LabelField("お届け先");
+			if (m_edittingAddress.argumentList.Count >= m_needArgmentCount)
 			{
 				try
 				{
-					if (Regex.IsMatch(m_sampleString, m_adress.fileNamePattern))
+					if (Regex.IsMatch(m_sampleString, m_edittingAddress.fileNamePattern))
 					{
-						EditorGUILayout.LabelField("> " + m_adress.GetAssetPath(m_sampleString));
+						EditorGUILayout.LabelField(m_edittingAddress.GetAssetPath(m_sampleString));
 					}
 					else
 					{
 						EditorGUILayout.HelpBox("ファイル名が規約に合っていません", MessageType.Info);
 					}
+
+					m_patternEnabled = true;
 				}
 				catch (Exception)
 				{
-					EditorGUILayout.HelpBox("命名規約の正規表現が異常", MessageType.Warning);
-					success = false;
+					EditorGUILayout.HelpBox("命名規約の正規表現が異常", MessageType.Warning);		
 				}
 			}
-
-			return success;
 		}
 	}
 }
