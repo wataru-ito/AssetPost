@@ -34,6 +34,8 @@ namespace AssetPost
 		GUIStyle m_plusStyle;
 		GUIStyle m_registerStyle;
 
+		Vector2 m_scrollPosition;
+
 
 		//------------------------------------------------------
 		// static function
@@ -166,14 +168,35 @@ namespace AssetPost
 			ProcessDragAndDrop(DeliveryFiles);
 		}
 
-		void DeliveryFiles(string[] filePath)
+		void DeliveryFiles(string[] paths)
 		{
 			m_assetPathList.Clear();
 			m_unknownFileList.Clear();
 			AssetDatabase.StartAssetEditing();
-			Array.ForEach(filePath, DeliveryFile);
+			foreach (var file in GetFiles(paths))
+			{
+				DeliveryFile(file);
+			}
 			AssetDatabase.StopAssetEditing();
 			AssetDatabase.Refresh();
+		}
+
+		static IEnumerable<string> GetFiles(string[] paths)
+		{
+			foreach (var path in paths)
+			{
+				if (Directory.Exists(path))
+				{
+					foreach (var file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+					{
+						yield return file;
+					}					
+				}
+				else
+				{
+					yield return path;
+				}
+			}
 		}
 
 		void DeliveryFile(string filePath)
@@ -207,6 +230,8 @@ namespace AssetPost
 
 		void DrawDeliveryInfo()
 		{
+			m_scrollPosition = EditorGUILayout.BeginScrollView(m_scrollPosition);
+
 			if (m_assetPathList.Count > 0)
 			{
 				EditorGUILayout.LabelField("配達完了", m_labelStyle);
@@ -220,6 +245,8 @@ namespace AssetPost
 				m_unknownFileList.ForEach(DrawUnknownFileName);
 				GUI.color = Color.white;
 			}
+
+			EditorGUILayout.EndScrollView();
 		}
 
 		void DrawDeliveredAssetPath(string assetPath)
