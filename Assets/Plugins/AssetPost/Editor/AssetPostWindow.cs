@@ -4,7 +4,9 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Assertions;
 using UnityEditor;
+using State = System.Action;
 
 namespace AssetPost
 {
@@ -14,21 +16,14 @@ namespace AssetPost
 	/// </summary>
 	public class AssetPostWindow : EditorWindow
 	{
-		enum Mode
-		{
-			Delivery,
-			Addressbook,
-			RegisterAddress,
-		}
-
 		AssetPostAddressBook m_addressbook;
 		AssetPostman[] m_postmans;
 		List<string> m_assetPathList = new List<string>();
 		List<string> m_unknownFileList = new List<string>();
 
-		Mode m_mode;
+		State m_state;
 
-		AssetPostAddress m_edittingAddress;
+		AssetPostAddress m_registerAddress;
 		bool m_patternEnabled;
 		int m_needArgmentCount;
 		string m_sampleString = string.Empty;
@@ -64,23 +59,13 @@ namespace AssetPost
 			UpdatePostman();
 
 			InitGUI();
+
+			SetState(StateDelivery);
 		}
 
 		private void OnGUI()
 		{
-			switch (m_mode)
-			{
-				case Mode.Delivery:
-					DeliveryMode();
-					break;
-				case Mode.Addressbook:
-					DrawAddressbook();
-					break;
-
-				case Mode.RegisterAddress:
-					RegisterAddresseeMode();
-					break;		
-			}
+			m_state();
 		}
 
 
@@ -99,7 +84,7 @@ namespace AssetPost
 			m_registerStyle = skin.FindStyle("AC Button");
 		}
 
-		void DrawToolbar(string label, string button, Mode mode)
+		void Toolbar(string label, string button, State state)
 		{			
 			var r = GUILayoutUtility.GetRect(GUIContent.none, EditorStyles.toolbar, GUILayout.ExpandWidth((true)));
 			EditorGUI.LabelField(r, label, EditorStyles.toolbar);
@@ -108,36 +93,24 @@ namespace AssetPost
 			r.width = 64;
 			if (GUI.Button(r, button, EditorStyles.toolbarButton))
 			{
-				m_mode = mode;
-				GUI.FocusControl(string.Empty);
+				SetState(state);
 			}
 		}
 
-
-		//------------------------------------------------------
-		// delivery
-		//------------------------------------------------------
-
-		void UpdatePostman()
+		bool CenterButton(string label)
 		{
-			m_postmans = m_addressbook.addressList.Select(i => new AssetPostman(i)).ToArray();
+			bool press = false;
+			EditorGUILayout.BeginHorizontal();
+			{
+				GUILayout.FlexibleSpace();
+				press = GUILayout.Button(label, m_registerStyle);
+				GUILayout.FlexibleSpace();
+			}
+			EditorGUILayout.EndHorizontal();
+			return press;
 		}
 
-		void DeliveryMode()
-		{
-			DrawToolbar("Asset Post", "配達先一覧", Mode.Addressbook);
-			GUILayout.FlexibleSpace();
-
-			EditorGUILayout.LabelField("ドロップされたアセットを\n適切な場所へ配置します。", m_messageStyle, GUILayout.Height(m_messageStyle.fontSize * 3f));
-
-			GUILayout.FlexibleSpace();
-
-			DrawDeliveryInfo();
-
-			DeliveryDropFiles();
-		}
-
-		void DeliveryDropFiles()
+		void ProcessDragAndDrop(Action<string[]> dropprocessor)
 		{
 			var controlID = EditorGUIUtility.GetControlID(FocusType.Passive);
 			var e = Event.current;
@@ -152,10 +125,45 @@ namespace AssetPost
 					break;
 
 				case EventType.DragExited:
-					DeliveryFiles(DragAndDrop.paths);
+					dropprocessor(DragAndDrop.paths);
 					e.Use();
 					break;
 			}
+
+		}
+
+		//------------------------------------------------------
+		// state
+		//------------------------------------------------------
+
+		void SetState(State state)
+		{
+			m_state = state;
+			GUI.FocusControl(string.Empty);
+		}
+
+
+		//------------------------------------------------------
+		// state delivery
+		//------------------------------------------------------
+
+		void UpdatePostman()
+		{
+			m_postmans = m_addressbook.addressList.Select(i => new AssetPostman(i)).ToArray();
+		}
+
+		void StateDelivery()
+		{
+			Toolbar("Asset Post", "配達先一覧", StateAddressbook);
+			GUILayout.FlexibleSpace();
+
+			EditorGUILayout.LabelField("ドロップされたアセットを\n適切な場所へ配置します。", m_messageStyle, GUILayout.Height(m_messageStyle.fontSize * 3f));
+
+			GUILayout.FlexibleSpace();
+
+			DrawDeliveryInfo();
+
+			ProcessDragAndDrop(DeliveryFiles);
 		}
 
 		void DeliveryFiles(string[] filePath)
@@ -226,12 +234,12 @@ namespace AssetPost
 
 
 		//------------------------------------------------------
-		// addresseebook
+		// state addresseebook
 		//------------------------------------------------------
 
-		void DrawAddressbook()
+		void StateAddressbook()
 		{
-			DrawToolbar("配達先一覧", "戻る", Mode.Delivery);
+			Toolbar("配達先一覧", "戻る", StateDelivery);
 
 			for (int i = 0; i < m_addressbook.addressList.Count; ++i)
 			{
@@ -241,14 +249,10 @@ namespace AssetPost
 				}
 			}
 
-			EditorGUILayout.BeginHorizontal();
-			GUILayout.FlexibleSpace();
-			if (GUILayout.Button("新規登録", m_registerStyle))
+			if (CenterButton("新規登録"))
 			{
-				SetEditAddress(null);
+				SetRegisterAddress(null);
 			}
-			GUILayout.FlexibleSpace();
-			EditorGUILayout.EndHorizontal();
 		}
 
 		bool AddressField(AssetPostAddress address)
@@ -258,7 +262,7 @@ namespace AssetPost
 
 			if (GUILayout.Button("編集", GUILayout.Width(32)))
 			{
-				SetEditAddress(address);
+				SetRegisterAddress(address);
 			}
 
 			EditorGUILayout.LabelField(address.name);
@@ -275,92 +279,87 @@ namespace AssetPost
 			return deleteFlag;
 		}
 
-	
+
 		//------------------------------------------------------
-		// 配達先登録
+		// state register
 		//------------------------------------------------------
 
-		readonly GUIContent kPatternContent = new GUIContent("ファイル命名規約", "正規表現");
-		readonly GUIContent kAssetPathContent = new GUIContent("Assets/", "string.Format()形式で指定");
-		readonly GUIContent kIndexContent = new GUIContent("Index", "マイナスを指定すると最後から");
-
-		void SetEditAddress(AssetPostAddress address)
+		void SetRegisterAddress(AssetPostAddress address)
 		{
-			m_edittingAddress = address ?? new AssetPostAddress();
+			m_registerAddress = address ?? new AssetPostAddress();
 			m_patternEnabled = false;
-			m_needArgmentCount = GetFormatArgumentCount(m_edittingAddress.assetPathFormat);
-			m_mode = Mode.RegisterAddress;
-			GUI.FocusControl(string.Empty);
+			m_needArgmentCount = GetFormatArgumentCount(m_registerAddress.assetPathFormat);
+			SetState(StateRegisterAddress);
 		}
 
 		bool CanRegisterAddress()
 		{
-			return m_edittingAddress != null && 
-				!string.IsNullOrEmpty(m_edittingAddress.name) &&
-				!string.IsNullOrEmpty(m_edittingAddress.fileNamePattern) &&
+			return m_registerAddress != null && 
+				!string.IsNullOrEmpty(m_registerAddress.name) &&
+				!string.IsNullOrEmpty(m_registerAddress.fileNamePattern) &&
 				m_patternEnabled &&
-				!string.IsNullOrEmpty(m_edittingAddress.assetPathFormat) &&
-				m_edittingAddress.argumentList.Count >= m_needArgmentCount;
+				!string.IsNullOrEmpty(m_registerAddress.assetPathFormat) &&
+				m_registerAddress.argumentList.Count >= m_needArgmentCount;
 		}
 
 		void RegisterAddress()
 		{
-			if (!m_addressbook.addressList.Contains(m_edittingAddress))
+			Assert.IsTrue(CanRegisterAddress());
+			
+			if (!m_addressbook.addressList.Contains(m_registerAddress))
 			{
-				m_addressbook.addressList.Add(m_edittingAddress);
+				m_addressbook.addressList.Add(m_registerAddress);
 				m_addressbook.addressList.Sort((x, y) => x.name.CompareTo(y.name));
 			}
 			m_addressbook.Save();
 			UpdatePostman();
 
-			m_edittingAddress = null;
-			m_mode = Mode.Addressbook;
+			m_registerAddress = null;
+			SetState(StateAddressbook);
 		}
 
-		void RegisterAddresseeMode()
+		void StateRegisterAddress()
 		{
-			DrawToolbar("配達先登録", "戻る", Mode.Addressbook);
-
-			if (m_edittingAddress == null)
-				return;
+			Toolbar("配達先登録", "戻る", StateAddressbook);
 
 			var labelWidth = EditorGUIUtility.labelWidth;
 			EditorGUIUtility.labelWidth = 100;
-
-			EditAddress(m_edittingAddress);
-
-			EditorGUILayout.Space();
-
-			DrawPatternCheck();
-
-			EditorGUILayout.Space();
-
-			EditorGUILayout.BeginHorizontal();
 			{
-				GUILayout.FlexibleSpace();
+				EditAddress(m_registerAddress);
 
-				GUI.enabled = CanRegisterAddress();
-				if (GUILayout.Button("登録", m_registerStyle))
-				{
-					RegisterAddress();
-				}
-				GUI.enabled = true;
+				EditorGUILayout.Space();
 
-				GUILayout.FlexibleSpace();
+				DrawPatternCheck();
 			}
-			EditorGUILayout.EndHorizontal();
-
 			EditorGUIUtility.labelWidth = labelWidth;
+
+			EditorGUILayout.Space();
+
+			GUI.enabled = CanRegisterAddress();
+			if (CenterButton("登録"))
+			{
+				RegisterAddress();
+			}
+			GUI.enabled = true;
+
+			ProcessDragAndDrop(DropFilePatternCheck);
 		}
+
+		readonly GUIContent kAdressNameContent = new GUIContent("登録名");
+		readonly GUIContent kPatternContent = new GUIContent("ファイル命名規約", "正規表現");
+		readonly GUIContent kAdressPathContent = new GUIContent("お届け先");
+		readonly GUIContent kAssetPathContent = new GUIContent("Assets/", "string.Format()形式で指定");
+		readonly GUIContent kFormatHelpContent = new GUIContent("format引数設定 - ファイル名をSplitして使う");
+		readonly GUIContent kAddArgumentContent = new GUIContent("引数追加");
 
 		void EditAddress(AssetPostAddress address)
 		{
-			address.name = EditorGUILayout.TextField("登録名", address.name ?? string.Empty);
+			address.name = EditorGUILayout.TextField(kAdressNameContent, address.name ?? string.Empty);
 			address.fileNamePattern = EditorGUILayout.TextField(kPatternContent, address.fileNamePattern);
 
 			EditorGUILayout.Space();
 
-			EditorGUILayout.LabelField("お届け先", m_labelStyle);
+			EditorGUILayout.LabelField(kAdressPathContent, m_labelStyle);
 			EditorGUI.BeginChangeCheck();
 			var labelWidth = EditorGUIUtility.labelWidth;
 			EditorGUIUtility.labelWidth = 45;
@@ -372,7 +371,7 @@ namespace AssetPost
 			}
 						
 			++EditorGUI.indentLevel;
-			EditorGUILayout.LabelField("format引数設定 - ファイル名をSplitして使う");
+			EditorGUILayout.LabelField(kFormatHelpContent);
 
 			address.separators = SeparatorsField(address.separators, address.fileNamePattern);
 
@@ -386,7 +385,7 @@ namespace AssetPost
 
 			EditorGUILayout.BeginHorizontal();
 			GUILayout.FlexibleSpace();
-			if (GUILayout.Button("引数追加", m_plusStyle))
+			if (GUILayout.Button(kAddArgumentContent, m_plusStyle))
 			{
 				var info = new AssetPostAddress.ArgumentInfo();
 				address.argumentList.Add(info);
@@ -401,9 +400,11 @@ namespace AssetPost
 			--EditorGUI.indentLevel;
 		}
 
-		static char[] SeparatorsField(char[] separators, string sample)
+		readonly GUIContent kSeparatorContent = new GUIContent("separator", "ファイル名がこのchar[]でSplitされます");
+
+		char[] SeparatorsField(char[] separators, string sample)
 		{
-			var str = EditorGUILayout.TextField("separator", new string(separators));
+			var str = EditorGUILayout.TextField(kSeparatorContent, new string(separators));
 			separators = new char[str.Length];
 			for (int i = 0; i < str.Length; ++i)
 			{
@@ -425,6 +426,8 @@ namespace AssetPost
 			return separators;
 		}
 
+		readonly GUIContent kIndexContent = new GUIContent("Index", "マイナスを指定すると最後から");
+
 		bool ArgumentInfoField(int index, AssetPostAddress.ArgumentInfo info)
 		{
 			bool deleteFlag = false;
@@ -433,27 +436,27 @@ namespace AssetPost
 
 			var indent = EditorGUI.indentLevel;
 			EditorGUI.indentLevel = 0;
-			EditorGUILayout.BeginHorizontal();
-			GUILayout.FlexibleSpace();
-			EditorGUILayout.LabelField("{"+index+"}", GUILayout.Width(24));
-
-			var labelWidth = EditorGUIUtility.labelWidth;
-			EditorGUIUtility.labelWidth = 40;
-			info.elementIndex = EditorGUILayout.IntField(kIndexContent, info.elementIndex, GUILayout.Width(65));
-			EditorGUIUtility.labelWidth = labelWidth;
-
-			GUILayout.Space(8);
-			info.startIndex = EditorGUILayout.IntField(info.startIndex, numW);
-			EditorGUILayout.LabelField("文字目 -", GUILayout.Width(45));
-			info.endIndex = EditorGUILayout.IntField(info.endIndex, numW);
-			EditorGUILayout.LabelField("文字目", GUILayout.Width(45));
-
-			if (GUILayout.Button(GUIContent.none, m_deleteBtnStyle, GUILayout.Width(16)))
+			using (new EditorGUILayout.HorizontalScope())
 			{
-				deleteFlag = true;
-			}
+				GUILayout.FlexibleSpace();
+				EditorGUILayout.LabelField("{" + index + "}", GUILayout.Width(24));
 
-			EditorGUILayout.EndHorizontal();
+				var labelWidth = EditorGUIUtility.labelWidth;
+				EditorGUIUtility.labelWidth = 40;
+				info.elementIndex = EditorGUILayout.IntField(kIndexContent, info.elementIndex, GUILayout.Width(65));
+				EditorGUIUtility.labelWidth = labelWidth;
+
+				GUILayout.Space(8);
+				info.startIndex = EditorGUILayout.IntField(info.startIndex, numW);
+				EditorGUILayout.LabelField("文字目 -", GUILayout.Width(45));
+				info.endIndex = EditorGUILayout.IntField(info.endIndex, numW);
+				EditorGUILayout.LabelField("文字目", GUILayout.Width(45));
+
+				if (GUILayout.Button(GUIContent.none, m_deleteBtnStyle, GUILayout.Width(16)))
+				{
+					deleteFlag = true;
+				}
+			}
 			EditorGUI.indentLevel = indent;
 
 			return deleteFlag;
@@ -477,20 +480,24 @@ namespace AssetPost
 			return count;
 		}
 
+		readonly GUIContent kTestContent = new GUIContent("テスト", "ファイルドロップでも可能");
+		readonly GUIContent kFileNameContent = new GUIContent("ファイル名", "ファイルドロップでも可能");
+		readonly GUIContent kDeliveryAddressContent = new GUIContent("お届け先");
+
 		void DrawPatternCheck()
 		{
 			m_patternEnabled = false;
 
-			EditorGUILayout.LabelField("テスト", m_labelStyle);
-			m_sampleString = EditorGUILayout.TextField("ファイル名", m_sampleString);
-			EditorGUILayout.LabelField("お届け先");
-			if (m_edittingAddress.argumentList.Count >= m_needArgmentCount)
+			EditorGUILayout.LabelField(kTestContent, m_labelStyle);
+			m_sampleString = EditorGUILayout.TextField(kFileNameContent, m_sampleString);
+			EditorGUILayout.LabelField(kDeliveryAddressContent);
+			if (m_registerAddress.argumentList.Count >= m_needArgmentCount)
 			{
 				try
 				{
-					if (Regex.IsMatch(m_sampleString, m_edittingAddress.fileNamePattern))
+					if (Regex.IsMatch(m_sampleString, m_registerAddress.fileNamePattern))
 					{
-						EditorGUILayout.LabelField(m_edittingAddress.GetAssetPath(m_sampleString));
+						EditorGUILayout.LabelField(m_registerAddress.GetAssetPath(m_sampleString));
 					}
 					else
 					{
@@ -503,6 +510,14 @@ namespace AssetPost
 				{
 					EditorGUILayout.HelpBox("命名規約の正規表現が異常", MessageType.Warning);		
 				}
+			}
+		}
+
+		void DropFilePatternCheck(string[] paths)
+		{
+			if (paths.Length > 0)
+			{
+				m_sampleString = Path.GetFileName(paths[0]);
 			}
 		}
 	}

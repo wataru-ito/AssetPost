@@ -18,6 +18,8 @@ namespace AssetPost
 		// lifetime
 		//------------------------------------------------------
 
+		// 禁止
+		// > Load() から取得してね
 		private AssetPostAddressBook()
 		{}
 
@@ -65,6 +67,18 @@ namespace AssetPost
 			public int endIndex;
 		}
 
+		public string name;
+		public string fileNamePattern;
+
+		public char[] separators;
+		public string assetPathFormat;
+		public List<ArgumentInfo> argumentList;
+
+
+		//------------------------------------------------------
+		// lifetime
+		//------------------------------------------------------
+
 		public AssetPostAddress()
 		{
 			name = string.Empty;
@@ -73,13 +87,6 @@ namespace AssetPost
 			assetPathFormat = string.Empty;
 			argumentList = new List<ArgumentInfo>();
 		}
-
-		public string name;
-		public string fileNamePattern;
-
-		public char[] separators;
-		public string assetPathFormat;
-		public List<ArgumentInfo> argumentList;
 
 
 		//------------------------------------------------------
