@@ -109,6 +109,7 @@ namespace AssetPost
 			if (GUI.Button(r, button, EditorStyles.toolbarButton))
 			{
 				m_mode = mode;
+				GUI.FocusControl(string.Empty);
 			}
 		}
 
@@ -289,6 +290,7 @@ namespace AssetPost
 			m_patternEnabled = false;
 			m_needArgmentCount = GetFormatArgumentCount(m_edittingAddress.assetPathFormat);
 			m_mode = Mode.RegisterAddress;
+			GUI.FocusControl(string.Empty);
 		}
 
 		bool CanRegisterAddress()
