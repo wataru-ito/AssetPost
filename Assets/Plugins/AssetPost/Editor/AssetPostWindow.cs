@@ -17,24 +17,30 @@ namespace AssetPost
 	public class AssetPostWindow : EditorWindow
 	{
 		AssetPostAddressBook m_addressbook;
+
 		AssetPostman[] m_postmans;
 		List<string> m_assetPathList = new List<string>();
 		List<string> m_unknownFileList = new List<string>();
 
-		State m_state;
+		AssetPostAddress m_orderingAddress;
+		bool m_orderChanged;
+		Vector2 m_scrollPosition;
 
 		AssetPostAddress m_registerAddress;
 		bool m_patternEnabled;
 		int m_needArgmentCount;
 		string m_sampleString = string.Empty;
 
+		State m_state;
+
 		GUIStyle m_messageStyle;
 		GUIStyle m_labelStyle;
 		GUIStyle m_deleteBtnStyle;
 		GUIStyle m_plusStyle;
 		GUIStyle m_registerStyle;
-
-		Vector2 m_scrollPosition;
+		GUIStyle m_listToggle;
+		GUIStyle m_btnLeftStyle;
+		GUIStyle m_btnRightStyle;
 
 
 		//------------------------------------------------------
@@ -52,22 +58,28 @@ namespace AssetPost
 		// unity system function
 		//------------------------------------------------------
 
-		private void OnEnable()
+		void OnEnable()
 		{
 			titleContent = new GUIContent("Asset Post");
 			minSize = new Vector2(330f, 100f);
 
 			m_addressbook = AssetPostAddressBook.Load();
 			UpdatePostman();
+			m_orderingAddress = null;
 
 			InitGUI();
 
 			SetState(StateDelivery);
 		}
 
-		private void OnGUI()
+		void OnGUI()
 		{
 			m_state();
+		}
+
+		void OnLostFocus()
+		{
+			m_orderingAddress = null;
 		}
 
 
@@ -84,6 +96,9 @@ namespace AssetPost
 			m_deleteBtnStyle = skin.FindStyle("OL Minus");
 			m_plusStyle = skin.FindStyle("OL Plus");
 			m_registerStyle = skin.FindStyle("AC Button");
+			m_listToggle = skin.FindStyle("ListToggle");
+			m_btnLeftStyle = skin.FindStyle("ButtonLeft");
+			m_btnRightStyle = skin.FindStyle("ButtonRight");
 		}
 
 		void Toolbar(string label, string button, State state)
@@ -133,6 +148,27 @@ namespace AssetPost
 			}
 
 		}
+
+		static Rect GetRectFromHead(ref Rect position, float width)
+		{
+			var r = position;
+			r.width = width;
+
+			position.x += width;
+			position.width -= width;
+			return r;
+		}
+
+		static Rect GetRectFromTail(ref Rect position, float width)
+		{
+			var r = position;
+			r.x = position.xMax - width;
+			r.width = width;
+
+			position.width -= width;
+			return r;
+		}
+
 
 		//------------------------------------------------------
 		// state
@@ -263,16 +299,30 @@ namespace AssetPost
 		//------------------------------------------------------
 		// state addresseebook
 		//------------------------------------------------------
-
+		
 		void StateAddressbook()
 		{
 			Toolbar("配達先一覧", "戻る", StateDelivery);
 
+			var mousePosition = Event.current.mousePosition;
+
 			for (int i = 0; i < m_addressbook.addressList.Count; ++i)
 			{
-				if (AddressField(m_addressbook.addressList[i]))
+				var adress = m_addressbook.addressList[i];
+
+				var position = GUILayoutUtility.GetRect(0, EditorGUIUtility.singleLineHeight, GUIStyle.none, GUILayout.ExpandWidth(true));
+				if (AddressField(position, adress))
 				{
 					m_addressbook.addressList.RemoveAt(i--);
+				}
+
+				if (m_orderingAddress != null && m_orderingAddress != adress && position.yMin < mousePosition.y && mousePosition.y < position.yMax)
+				{
+					var dragIndex = m_addressbook.addressList.IndexOf(m_orderingAddress);
+					m_addressbook.addressList[i] = m_orderingAddress;
+					m_addressbook.addressList[dragIndex] = adress;
+					m_orderChanged = true;
+					Repaint();
 				}
 			}
 
@@ -282,19 +332,16 @@ namespace AssetPost
 			}
 		}
 
-		bool AddressField(AssetPostAddress address)
+		bool AddressField(Rect position, AssetPostAddress address)
 		{
 			bool deleteFlag = false;
-			EditorGUILayout.BeginHorizontal();
 
-			if (GUILayout.Button("編集", GUILayout.Width(32)))
-			{
-				SetRegisterAddress(address);
-			}
+			GUI.enabled = m_orderingAddress == null || m_orderingAddress == address;
+			OrderField(GetRectFromHead(ref position, m_listToggle.fixedWidth), address);
 
-			EditorGUILayout.LabelField(address.name);
+			GUI.enabled = m_orderingAddress == null;
 
-			if (GUILayout.Button(GUIContent.none, m_deleteBtnStyle, GUILayout.Width(16)))
+			if (GUI.Button(GetRectFromTail(ref position, 32), "削除", m_btnRightStyle))
 			{
 				if (EditorUtility.DisplayDialog("配達先削除", string.Format("配達先[{0}]を本当に削除しますか？", address.name), "削除"))
 				{
@@ -302,8 +349,57 @@ namespace AssetPost
 				}
 			}
 
-			EditorGUILayout.EndHorizontal();
+			if (GUI.Button(GetRectFromTail(ref position, 32), "編集", m_btnLeftStyle))
+			{
+				SetRegisterAddress(address);
+			}
+
+			GUI.enabled = m_orderingAddress == null || m_orderingAddress == address;
+			EditorGUI.LabelField(position, address.name);
+
+			GUI.enabled = true;
+
 			return deleteFlag;
+		}
+
+		void OrderField(Rect position, AssetPostAddress address)
+		{
+			var e = Event.current;
+			var controlID = EditorGUIUtility.GetControlID(FocusType.Passive);
+			switch (e.GetTypeForControl(controlID))
+			{
+				case EventType.Repaint:
+					m_listToggle.Draw(position, false, false, m_orderingAddress == address, false);
+					break;
+
+				case EventType.MouseDown:
+					if (position.Contains(e.mousePosition) && GUIUtility.hotControl == 0)
+					{
+						m_orderingAddress = address;
+						m_orderChanged = false;
+						GUIUtility.hotControl = controlID;
+						e.Use();
+					}
+					break;
+
+				case EventType.MouseLeaveWindow:
+				case EventType.MouseUp:
+					//if (GUIUtility.hotControl == controlID) 順番がずれるからControlId比較じゃダメだ
+					if (m_orderingAddress == address)
+					{
+						m_orderingAddress = null;
+						GUIUtility.hotControl = 0;
+						e.Use();
+
+						if (m_orderChanged)
+						{
+							m_addressbook.Save();
+							UpdatePostman();
+							m_orderChanged = false;
+						}
+					}
+					break;
+			}
 		}
 
 
@@ -336,7 +432,6 @@ namespace AssetPost
 			if (!m_addressbook.addressList.Contains(m_registerAddress))
 			{
 				m_addressbook.addressList.Add(m_registerAddress);
-				m_addressbook.addressList.Sort((x, y) => x.name.CompareTo(y.name));
 			}
 			m_addressbook.Save();
 			UpdatePostman();
